@@ -1,7 +1,6 @@
 module.exports = {
   entry: {
-    index: './index.js',
-    hello: './hello.jsx'
+    tutorial: ['./app/js/CommentBox.js']
   },
   module: {
     loaders: [
