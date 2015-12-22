@@ -1,7 +1,7 @@
 var React = require('react');
 
 var CommentForm = React.createClass({
-    handleSubmit: function(e) {
+    handleSubmit(e) {
         e.preventDefault();
         var author = this.refs.author.value.trim();
         var text = this.refs.text.value.trim();
@@ -9,12 +9,12 @@ var CommentForm = React.createClass({
             return;
         }
 
-        this.props.onCommentSubmit({author: author, text: text});
+        this.props.onCommentSubmit({author, text});
         this.refs.author.value = '';
         this.refs.text.value = '';
         return;
     },
-    render: function() {
+    render() {
         return(
             <form className="commentForm" onSubmit={this.handleSubmit}>
                 <input type="text" placeholder="이름" ref="author" />

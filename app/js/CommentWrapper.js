@@ -2,7 +2,7 @@ var React = require('react');
 var marked = require('marked');
 
 var CommentList = React.createClass({
-    render: function() {
+    render() {
         var commentNodes = this.props.data.map(function (comment, i) {
             return (
                 <Comment key={i} author={comment.author}>
@@ -19,12 +19,12 @@ var CommentList = React.createClass({
 });
 
 var Comment = React.createClass({
-    rawMarkup: function() {
+    rawMarkup() {
         var rawMarkup = marked(this.props.children.toString(), {sanitize: true});
         return { __html: rawMarkup };
     },
 
-    render: function() {
+    render() {
         return (
             <div className="comment">
                 <h2 className="commentAuthor">
@@ -36,7 +36,4 @@ var Comment = React.createClass({
     }
 });
 
-module.exports = {
-    CommentList : CommentList,
-    Comment : Comment
-}
+module.exports = { CommentList, Comment }
