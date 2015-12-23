@@ -1,8 +1,11 @@
+require('../css/base.scss');
+
 var React = require('react');
 var CommentForm = require('./CommentForm');
 var wrapper = require('./CommentWrapper');
 var Comment = wrapper.Comment;
 var CommentList = wrapper.CommentList;
+
 
 var CommentBox = React.createClass({
     handleCommentSubmit(comment) {
@@ -19,7 +22,7 @@ var CommentBox = React.createClass({
     render() {
         return (
             <div className="commentBox">
-                <h1>댓글</h1>
+                <h1>댓글2</h1>
                 <CommentList data={this.state.data}/>
                 <CommentForm onCommentSubmit={this.handleCommentSubmit} />
             </div>
