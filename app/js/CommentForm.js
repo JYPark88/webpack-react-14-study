@@ -9,7 +9,7 @@ var CommentForm = React.createClass({
             return;
         }
 
-        this.props.onCommentSubmit({author, text, brown});
+        this.props.onCommentSubmit({author, text, color: 'yellow'});
         this.refs.author.value = '';
         this.refs.text.value = '';
         return;
