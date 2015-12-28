@@ -1,4 +1,502 @@
 /******/ (function(modules) { // webpackBootstrap
+/******/ 	var parentHotUpdateCallback = this["webpackHotUpdate"];
+/******/ 	this["webpackHotUpdate"] = 
+/******/ 	function webpackHotUpdateCallback(chunkId, moreModules) { // eslint-disable-line no-unused-vars
+/******/ 		hotAddUpdateChunk(chunkId, moreModules);
+/******/ 		if(parentHotUpdateCallback) parentHotUpdateCallback(chunkId, moreModules);
+/******/ 	}
+/******/ 	
+/******/ 	function hotDownloadUpdateChunk(chunkId) { // eslint-disable-line no-unused-vars
+/******/ 		var head = document.getElementsByTagName("head")[0];
+/******/ 		var script = document.createElement("script");
+/******/ 		script.type = "text/javascript";
+/******/ 		script.charset = "utf-8";
+/******/ 		script.src = __webpack_require__.p + "" + chunkId + "." + hotCurrentHash + ".hot-update.js";
+/******/ 		head.appendChild(script);
+/******/ 	}
+/******/ 	
+/******/ 	function hotDownloadManifest(callback) { // eslint-disable-line no-unused-vars
+/******/ 		if(typeof XMLHttpRequest === "undefined")
+/******/ 			return callback(new Error("No browser support"));
+/******/ 		try {
+/******/ 			var request = new XMLHttpRequest();
+/******/ 			var requestPath = __webpack_require__.p + "" + hotCurrentHash + ".hot-update.json";
+/******/ 			request.open("GET", requestPath, true);
+/******/ 			request.timeout = 10000;
+/******/ 			request.send(null);
+/******/ 		} catch(err) {
+/******/ 			return callback(err);
+/******/ 		}
+/******/ 		request.onreadystatechange = function() {
+/******/ 			if(request.readyState !== 4) return;
+/******/ 			if(request.status === 0) {
+/******/ 				// timeout
+/******/ 				callback(new Error("Manifest request to " + requestPath + " timed out."));
+/******/ 			} else if(request.status === 404) {
+/******/ 				// no update available
+/******/ 				callback();
+/******/ 			} else if(request.status !== 200 && request.status !== 304) {
+/******/ 				// other failure
+/******/ 				callback(new Error("Manifest request to " + requestPath + " failed."));
+/******/ 			} else {
+/******/ 				// success
+/******/ 				try {
+/******/ 					var update = JSON.parse(request.responseText);
+/******/ 				} catch(e) {
+/******/ 					callback(e);
+/******/ 					return;
+/******/ 				}
+/******/ 				callback(null, update);
+/******/ 			}
+/******/ 		};
+/******/ 	}
+
+/******/ 	
+/******/ 	
+/******/ 	var hotApplyOnUpdate = true;
+/******/ 	var hotCurrentHash = "cfa813ff218c0a0e0a4f"; // eslint-disable-line no-unused-vars
+/******/ 	var hotCurrentModuleData = {};
+/******/ 	var hotCurrentParents = []; // eslint-disable-line no-unused-vars
+/******/ 	
+/******/ 	function hotCreateRequire(moduleId) { // eslint-disable-line no-unused-vars
+/******/ 		var me = installedModules[moduleId];
+/******/ 		if(!me) return __webpack_require__;
+/******/ 		var fn = function(request) {
+/******/ 			if(me.hot.active) {
+/******/ 				if(installedModules[request]) {
+/******/ 					if(installedModules[request].parents.indexOf(moduleId) < 0)
+/******/ 						installedModules[request].parents.push(moduleId);
+/******/ 					if(me.children.indexOf(request) < 0)
+/******/ 						me.children.push(request);
+/******/ 				} else hotCurrentParents = [moduleId];
+/******/ 			} else {
+/******/ 				console.warn("[HMR] unexpected require(" + request + ") from disposed module " + moduleId);
+/******/ 				hotCurrentParents = [];
+/******/ 			}
+/******/ 			return __webpack_require__(request);
+/******/ 		};
+/******/ 		for(var name in __webpack_require__) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(__webpack_require__, name)) {
+/******/ 				fn[name] = __webpack_require__[name];
+/******/ 			}
+/******/ 		}
+/******/ 		fn.e = function(chunkId, callback) {
+/******/ 			if(hotStatus === "ready")
+/******/ 				hotSetStatus("prepare");
+/******/ 			hotChunksLoading++;
+/******/ 			__webpack_require__.e(chunkId, function() {
+/******/ 				try {
+/******/ 					callback.call(null, fn);
+/******/ 				} finally {
+/******/ 					finishChunkLoading();
+/******/ 				}
+/******/ 	
+/******/ 				function finishChunkLoading() {
+/******/ 					hotChunksLoading--;
+/******/ 					if(hotStatus === "prepare") {
+/******/ 						if(!hotWaitingFilesMap[chunkId]) {
+/******/ 							hotEnsureUpdateChunk(chunkId);
+/******/ 						}
+/******/ 						if(hotChunksLoading === 0 && hotWaitingFiles === 0) {
+/******/ 							hotUpdateDownloaded();
+/******/ 						}
+/******/ 					}
+/******/ 				}
+/******/ 			});
+/******/ 		};
+/******/ 		return fn;
+/******/ 	}
+/******/ 	
+/******/ 	function hotCreateModule(moduleId) { // eslint-disable-line no-unused-vars
+/******/ 		var hot = {
+/******/ 			// private stuff
+/******/ 			_acceptedDependencies: {},
+/******/ 			_declinedDependencies: {},
+/******/ 			_selfAccepted: false,
+/******/ 			_selfDeclined: false,
+/******/ 			_disposeHandlers: [],
+/******/ 	
+/******/ 			// Module API
+/******/ 			active: true,
+/******/ 			accept: function(dep, callback) {
+/******/ 				if(typeof dep === "undefined")
+/******/ 					hot._selfAccepted = true;
+/******/ 				else if(typeof dep === "function")
+/******/ 					hot._selfAccepted = dep;
+/******/ 				else if(typeof dep === "object")
+/******/ 					for(var i = 0; i < dep.length; i++)
+/******/ 						hot._acceptedDependencies[dep[i]] = callback;
+/******/ 				else
+/******/ 					hot._acceptedDependencies[dep] = callback;
+/******/ 			},
+/******/ 			decline: function(dep) {
+/******/ 				if(typeof dep === "undefined")
+/******/ 					hot._selfDeclined = true;
+/******/ 				else if(typeof dep === "number")
+/******/ 					hot._declinedDependencies[dep] = true;
+/******/ 				else
+/******/ 					for(var i = 0; i < dep.length; i++)
+/******/ 						hot._declinedDependencies[dep[i]] = true;
+/******/ 			},
+/******/ 			dispose: function(callback) {
+/******/ 				hot._disposeHandlers.push(callback);
+/******/ 			},
+/******/ 			addDisposeHandler: function(callback) {
+/******/ 				hot._disposeHandlers.push(callback);
+/******/ 			},
+/******/ 			removeDisposeHandler: function(callback) {
+/******/ 				var idx = hot._disposeHandlers.indexOf(callback);
+/******/ 				if(idx >= 0) hot._disposeHandlers.splice(idx, 1);
+/******/ 			},
+/******/ 	
+/******/ 			// Management API
+/******/ 			check: hotCheck,
+/******/ 			apply: hotApply,
+/******/ 			status: function(l) {
+/******/ 				if(!l) return hotStatus;
+/******/ 				hotStatusHandlers.push(l);
+/******/ 			},
+/******/ 			addStatusHandler: function(l) {
+/******/ 				hotStatusHandlers.push(l);
+/******/ 			},
+/******/ 			removeStatusHandler: function(l) {
+/******/ 				var idx = hotStatusHandlers.indexOf(l);
+/******/ 				if(idx >= 0) hotStatusHandlers.splice(idx, 1);
+/******/ 			},
+/******/ 	
+/******/ 			//inherit from previous dispose call
+/******/ 			data: hotCurrentModuleData[moduleId]
+/******/ 		};
+/******/ 		return hot;
+/******/ 	}
+/******/ 	
+/******/ 	var hotStatusHandlers = [];
+/******/ 	var hotStatus = "idle";
+/******/ 	
+/******/ 	function hotSetStatus(newStatus) {
+/******/ 		hotStatus = newStatus;
+/******/ 		for(var i = 0; i < hotStatusHandlers.length; i++)
+/******/ 			hotStatusHandlers[i].call(null, newStatus);
+/******/ 	}
+/******/ 	
+/******/ 	// while downloading
+/******/ 	var hotWaitingFiles = 0;
+/******/ 	var hotChunksLoading = 0;
+/******/ 	var hotWaitingFilesMap = {};
+/******/ 	var hotRequestedFilesMap = {};
+/******/ 	var hotAvailibleFilesMap = {};
+/******/ 	var hotCallback;
+/******/ 	
+/******/ 	// The update info
+/******/ 	var hotUpdate, hotUpdateNewHash;
+/******/ 	
+/******/ 	function toModuleId(id) {
+/******/ 		var isNumber = (+id) + "" === id;
+/******/ 		return isNumber ? +id : id;
+/******/ 	}
+/******/ 	
+/******/ 	function hotCheck(apply, callback) {
+/******/ 		if(hotStatus !== "idle") throw new Error("check() is only allowed in idle status");
+/******/ 		if(typeof apply === "function") {
+/******/ 			hotApplyOnUpdate = false;
+/******/ 			callback = apply;
+/******/ 		} else {
+/******/ 			hotApplyOnUpdate = apply;
+/******/ 			callback = callback || function(err) {
+/******/ 				if(err) throw err;
+/******/ 			};
+/******/ 		}
+/******/ 		hotSetStatus("check");
+/******/ 		hotDownloadManifest(function(err, update) {
+/******/ 			if(err) return callback(err);
+/******/ 			if(!update) {
+/******/ 				hotSetStatus("idle");
+/******/ 				callback(null, null);
+/******/ 				return;
+/******/ 			}
+/******/ 	
+/******/ 			hotRequestedFilesMap = {};
+/******/ 			hotAvailibleFilesMap = {};
+/******/ 			hotWaitingFilesMap = {};
+/******/ 			for(var i = 0; i < update.c.length; i++)
+/******/ 				hotAvailibleFilesMap[update.c[i]] = true;
+/******/ 			hotUpdateNewHash = update.h;
+/******/ 	
+/******/ 			hotSetStatus("prepare");
+/******/ 			hotCallback = callback;
+/******/ 			hotUpdate = {};
+/******/ 			var chunkId = 0;
+/******/ 			{ // eslint-disable-line no-lone-blocks
+/******/ 				/*globals chunkId */
+/******/ 				hotEnsureUpdateChunk(chunkId);
+/******/ 			}
+/******/ 			if(hotStatus === "prepare" && hotChunksLoading === 0 && hotWaitingFiles === 0) {
+/******/ 				hotUpdateDownloaded();
+/******/ 			}
+/******/ 		});
+/******/ 	}
+/******/ 	
+/******/ 	function hotAddUpdateChunk(chunkId, moreModules) { // eslint-disable-line no-unused-vars
+/******/ 		if(!hotAvailibleFilesMap[chunkId] || !hotRequestedFilesMap[chunkId])
+/******/ 			return;
+/******/ 		hotRequestedFilesMap[chunkId] = false;
+/******/ 		for(var moduleId in moreModules) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(moreModules, moduleId)) {
+/******/ 				hotUpdate[moduleId] = moreModules[moduleId];
+/******/ 			}
+/******/ 		}
+/******/ 		if(--hotWaitingFiles === 0 && hotChunksLoading === 0) {
+/******/ 			hotUpdateDownloaded();
+/******/ 		}
+/******/ 	}
+/******/ 	
+/******/ 	function hotEnsureUpdateChunk(chunkId) {
+/******/ 		if(!hotAvailibleFilesMap[chunkId]) {
+/******/ 			hotWaitingFilesMap[chunkId] = true;
+/******/ 		} else {
+/******/ 			hotRequestedFilesMap[chunkId] = true;
+/******/ 			hotWaitingFiles++;
+/******/ 			hotDownloadUpdateChunk(chunkId);
+/******/ 		}
+/******/ 	}
+/******/ 	
+/******/ 	function hotUpdateDownloaded() {
+/******/ 		hotSetStatus("ready");
+/******/ 		var callback = hotCallback;
+/******/ 		hotCallback = null;
+/******/ 		if(!callback) return;
+/******/ 		if(hotApplyOnUpdate) {
+/******/ 			hotApply(hotApplyOnUpdate, callback);
+/******/ 		} else {
+/******/ 			var outdatedModules = [];
+/******/ 			for(var id in hotUpdate) {
+/******/ 				if(Object.prototype.hasOwnProperty.call(hotUpdate, id)) {
+/******/ 					outdatedModules.push(toModuleId(id));
+/******/ 				}
+/******/ 			}
+/******/ 			callback(null, outdatedModules);
+/******/ 		}
+/******/ 	}
+/******/ 	
+/******/ 	function hotApply(options, callback) {
+/******/ 		if(hotStatus !== "ready") throw new Error("apply() is only allowed in ready status");
+/******/ 		if(typeof options === "function") {
+/******/ 			callback = options;
+/******/ 			options = {};
+/******/ 		} else if(options && typeof options === "object") {
+/******/ 			callback = callback || function(err) {
+/******/ 				if(err) throw err;
+/******/ 			};
+/******/ 		} else {
+/******/ 			options = {};
+/******/ 			callback = callback || function(err) {
+/******/ 				if(err) throw err;
+/******/ 			};
+/******/ 		}
+/******/ 	
+/******/ 		function getAffectedStuff(module) {
+/******/ 			var outdatedModules = [module];
+/******/ 			var outdatedDependencies = {};
+/******/ 	
+/******/ 			var queue = outdatedModules.slice();
+/******/ 			while(queue.length > 0) {
+/******/ 				var moduleId = queue.pop();
+/******/ 				var module = installedModules[moduleId];
+/******/ 				if(!module || module.hot._selfAccepted)
+/******/ 					continue;
+/******/ 				if(module.hot._selfDeclined) {
+/******/ 					return new Error("Aborted because of self decline: " + moduleId);
+/******/ 				}
+/******/ 				if(moduleId === 0) {
+/******/ 					return;
+/******/ 				}
+/******/ 				for(var i = 0; i < module.parents.length; i++) {
+/******/ 					var parentId = module.parents[i];
+/******/ 					var parent = installedModules[parentId];
+/******/ 					if(parent.hot._declinedDependencies[moduleId]) {
+/******/ 						return new Error("Aborted because of declined dependency: " + moduleId + " in " + parentId);
+/******/ 					}
+/******/ 					if(outdatedModules.indexOf(parentId) >= 0) continue;
+/******/ 					if(parent.hot._acceptedDependencies[moduleId]) {
+/******/ 						if(!outdatedDependencies[parentId])
+/******/ 							outdatedDependencies[parentId] = [];
+/******/ 						addAllToSet(outdatedDependencies[parentId], [moduleId]);
+/******/ 						continue;
+/******/ 					}
+/******/ 					delete outdatedDependencies[parentId];
+/******/ 					outdatedModules.push(parentId);
+/******/ 					queue.push(parentId);
+/******/ 				}
+/******/ 			}
+/******/ 	
+/******/ 			return [outdatedModules, outdatedDependencies];
+/******/ 		}
+/******/ 	
+/******/ 		function addAllToSet(a, b) {
+/******/ 			for(var i = 0; i < b.length; i++) {
+/******/ 				var item = b[i];
+/******/ 				if(a.indexOf(item) < 0)
+/******/ 					a.push(item);
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// at begin all updates modules are outdated
+/******/ 		// the "outdated" status can propagate to parents if they don't accept the children
+/******/ 		var outdatedDependencies = {};
+/******/ 		var outdatedModules = [];
+/******/ 		var appliedUpdate = {};
+/******/ 		for(var id in hotUpdate) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(hotUpdate, id)) {
+/******/ 				var moduleId = toModuleId(id);
+/******/ 				var result = getAffectedStuff(moduleId);
+/******/ 				if(!result) {
+/******/ 					if(options.ignoreUnaccepted)
+/******/ 						continue;
+/******/ 					hotSetStatus("abort");
+/******/ 					return callback(new Error("Aborted because " + moduleId + " is not accepted"));
+/******/ 				}
+/******/ 				if(result instanceof Error) {
+/******/ 					hotSetStatus("abort");
+/******/ 					return callback(result);
+/******/ 				}
+/******/ 				appliedUpdate[moduleId] = hotUpdate[moduleId];
+/******/ 				addAllToSet(outdatedModules, result[0]);
+/******/ 				for(var moduleId in result[1]) {
+/******/ 					if(Object.prototype.hasOwnProperty.call(result[1], moduleId)) {
+/******/ 						if(!outdatedDependencies[moduleId])
+/******/ 							outdatedDependencies[moduleId] = [];
+/******/ 						addAllToSet(outdatedDependencies[moduleId], result[1][moduleId]);
+/******/ 					}
+/******/ 				}
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// Store self accepted outdated modules to require them later by the module system
+/******/ 		var outdatedSelfAcceptedModules = [];
+/******/ 		for(var i = 0; i < outdatedModules.length; i++) {
+/******/ 			var moduleId = outdatedModules[i];
+/******/ 			if(installedModules[moduleId] && installedModules[moduleId].hot._selfAccepted)
+/******/ 				outdatedSelfAcceptedModules.push({
+/******/ 					module: moduleId,
+/******/ 					errorHandler: installedModules[moduleId].hot._selfAccepted
+/******/ 				});
+/******/ 		}
+/******/ 	
+/******/ 		// Now in "dispose" phase
+/******/ 		hotSetStatus("dispose");
+/******/ 		var queue = outdatedModules.slice();
+/******/ 		while(queue.length > 0) {
+/******/ 			var moduleId = queue.pop();
+/******/ 			var module = installedModules[moduleId];
+/******/ 			if(!module) continue;
+/******/ 	
+/******/ 			var data = {};
+/******/ 	
+/******/ 			// Call dispose handlers
+/******/ 			var disposeHandlers = module.hot._disposeHandlers;
+/******/ 			for(var j = 0; j < disposeHandlers.length; j++) {
+/******/ 				var cb = disposeHandlers[j];
+/******/ 				cb(data);
+/******/ 			}
+/******/ 			hotCurrentModuleData[moduleId] = data;
+/******/ 	
+/******/ 			// disable module (this disables requires from this module)
+/******/ 			module.hot.active = false;
+/******/ 	
+/******/ 			// remove module from cache
+/******/ 			delete installedModules[moduleId];
+/******/ 	
+/******/ 			// remove "parents" references from all children
+/******/ 			for(var j = 0; j < module.children.length; j++) {
+/******/ 				var child = installedModules[module.children[j]];
+/******/ 				if(!child) continue;
+/******/ 				var idx = child.parents.indexOf(moduleId);
+/******/ 				if(idx >= 0) {
+/******/ 					child.parents.splice(idx, 1);
+/******/ 				}
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// remove outdated dependency from module children
+/******/ 		for(var moduleId in outdatedDependencies) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(outdatedDependencies, moduleId)) {
+/******/ 				var module = installedModules[moduleId];
+/******/ 				var moduleOutdatedDependencies = outdatedDependencies[moduleId];
+/******/ 				for(var j = 0; j < moduleOutdatedDependencies.length; j++) {
+/******/ 					var dependency = moduleOutdatedDependencies[j];
+/******/ 					var idx = module.children.indexOf(dependency);
+/******/ 					if(idx >= 0) module.children.splice(idx, 1);
+/******/ 				}
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// Not in "apply" phase
+/******/ 		hotSetStatus("apply");
+/******/ 	
+/******/ 		hotCurrentHash = hotUpdateNewHash;
+/******/ 	
+/******/ 		// insert new code
+/******/ 		for(var moduleId in appliedUpdate) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(appliedUpdate, moduleId)) {
+/******/ 				modules[moduleId] = appliedUpdate[moduleId];
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// call accept handlers
+/******/ 		var error = null;
+/******/ 		for(var moduleId in outdatedDependencies) {
+/******/ 			if(Object.prototype.hasOwnProperty.call(outdatedDependencies, moduleId)) {
+/******/ 				var module = installedModules[moduleId];
+/******/ 				var moduleOutdatedDependencies = outdatedDependencies[moduleId];
+/******/ 				var callbacks = [];
+/******/ 				for(var i = 0; i < moduleOutdatedDependencies.length; i++) {
+/******/ 					var dependency = moduleOutdatedDependencies[i];
+/******/ 					var cb = module.hot._acceptedDependencies[dependency];
+/******/ 					if(callbacks.indexOf(cb) >= 0) continue;
+/******/ 					callbacks.push(cb);
+/******/ 				}
+/******/ 				for(var i = 0; i < callbacks.length; i++) {
+/******/ 					var cb = callbacks[i];
+/******/ 					try {
+/******/ 						cb(outdatedDependencies);
+/******/ 					} catch(err) {
+/******/ 						if(!error)
+/******/ 							error = err;
+/******/ 					}
+/******/ 				}
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// Load self accepted modules
+/******/ 		for(var i = 0; i < outdatedSelfAcceptedModules.length; i++) {
+/******/ 			var item = outdatedSelfAcceptedModules[i];
+/******/ 			var moduleId = item.module;
+/******/ 			hotCurrentParents = [moduleId];
+/******/ 			try {
+/******/ 				__webpack_require__(moduleId);
+/******/ 			} catch(err) {
+/******/ 				if(typeof item.errorHandler === "function") {
+/******/ 					try {
+/******/ 						item.errorHandler(err);
+/******/ 					} catch(err) {
+/******/ 						if(!error)
+/******/ 							error = err;
+/******/ 					}
+/******/ 				} else if(!error)
+/******/ 					error = err;
+/******/ 			}
+/******/ 		}
+/******/ 	
+/******/ 		// handle errors in accept handlers and self accepted module load
+/******/ 		if(error) {
+/******/ 			hotSetStatus("fail");
+/******/ 			return callback(error);
+/******/ 		}
+/******/ 	
+/******/ 		hotSetStatus("idle");
+/******/ 		callback(null, outdatedModules);
+/******/ 	}
+
 /******/ 	// The module cache
 /******/ 	var installedModules = {};
 
@@ -13,11 +511,14 @@
 /******/ 		var module = installedModules[moduleId] = {
 /******/ 			exports: {},
 /******/ 			id: moduleId,
-/******/ 			loaded: false
+/******/ 			loaded: false,
+/******/ 			hot: hotCreateModule(moduleId),
+/******/ 			parents: hotCurrentParents,
+/******/ 			children: []
 /******/ 		};
 
 /******/ 		// Execute the module function
-/******/ 		modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
+/******/ 		modules[moduleId].call(module.exports, module, module.exports, hotCreateRequire(moduleId));
 
 /******/ 		// Flag the module as loaded
 /******/ 		module.loaded = true;
@@ -36,15 +537,19 @@
 /******/ 	// __webpack_public_path__
 /******/ 	__webpack_require__.p = "";
 
+/******/ 	// __webpack_hash__
+/******/ 	__webpack_require__.h = function() { return hotCurrentHash; };
+
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(0);
+/******/ 	return hotCreateRequire(0)(0);
 /******/ })
 /************************************************************************/
 /******/ ([
 /* 0 */
 /***/ function(module, exports, __webpack_require__) {
 
-	module.exports = __webpack_require__(1);
+	__webpack_require__(1);
+	module.exports = __webpack_require__(169);
 
 
 /***/ },
@@ -56,8 +561,11 @@
 	var React = __webpack_require__(2);
 	var ReactDOM = __webpack_require__(159);
 	var CommentBox = __webpack_require__(160);
+	var Colors = __webpack_require__(168);
+	var NICE = Colors.NICE;
+	var SUPER_NICE = Color.SUPER_NICE;
 
-	var data = [{ author: 'Pete Hunt', text: '댓글입니다' }, { author: 'Jordan Walke', text: '*또 다른* 댓글입니다' }];
+	var data = [{ author: 'Pete Hunt', text: '댓글입니다', color: NICE }, { author: 'Jordan Walke', text: '*또 다른* 댓글입니다', color: SUPER_NICE }];
 
 	ReactDOM.render(React.createElement(CommentBox, { data: data }), document.getElementById('content'));
 
@@ -19654,46 +20162,16 @@
 
 	'use strict';
 
-	var _redboxReact2 = __webpack_require__(161);
-
-	var _redboxReact3 = _interopRequireDefault(_redboxReact2);
-
-	var _react2 = __webpack_require__(2);
-
-	var _react3 = _interopRequireDefault(_react2);
-
-	var _reactTransformCatchErrors3 = __webpack_require__(167);
-
-	var _reactTransformCatchErrors4 = _interopRequireDefault(_reactTransformCatchErrors3);
-
-	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-	var _components = {
-	    _component: {}
-	};
-
-	var _reactTransformCatchErrors2 = (0, _reactTransformCatchErrors4.default)({
-	    filename: '/Users/coupang/Desktop/testearly/webpack-react-14-study/app/js/CommentBox.js',
-	    components: _components,
-	    locals: [],
-	    imports: [_react3.default, _redboxReact3.default]
-	});
-
-	function _wrapComponent(id) {
-	    return function (Component) {
-	        return _reactTransformCatchErrors2(Component, id);
-	    };
-	}
-
-	__webpack_require__(168);
+	__webpack_require__(161);
 
 	var React = __webpack_require__(2);
-	var CommentForm = __webpack_require__(172);
-	var wrapper = __webpack_require__(173);
+	var CommentForm = __webpack_require__(165);
+	var wrapper = __webpack_require__(166);
 	var Comment = wrapper.Comment;
 	var CommentList = wrapper.CommentList;
 
-	var CommentBox = _wrapComponent('_component')(React.createClass({
+	var CommentBox = React.createClass({
+	    displayName: 'CommentBox',
 	    handleCommentSubmit: function handleCommentSubmit(comment) {
 	        var comments = this.state.data;
 	        var newComments = comments.concat([comment]);
@@ -19718,7 +20196,7 @@
 	            React.createElement(CommentForm, { onCommentSubmit: this.handleCommentSubmit })
 	        );
 	    }
-	}));
+	});
 
 	module.exports = CommentBox;
 
@@ -19726,1024 +20204,20 @@
 /* 161 */
 /***/ function(module, exports, __webpack_require__) {
 
-	'use strict';
-
-	exports.__esModule = true;
-
-	var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
-
-	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-	function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
-
-	function _inherits(subClass, superClass) { if (typeof superClass !== 'function' && superClass !== null) { throw new TypeError('Super expression must either be null or a function, not ' + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) subClass.__proto__ = superClass; }
-
-	var _react = __webpack_require__(2);
-
-	var _react2 = _interopRequireDefault(_react);
-
-	var _styleJs = __webpack_require__(162);
-
-	var _styleJs2 = _interopRequireDefault(_styleJs);
-
-	var _errorStackParser = __webpack_require__(163);
-
-	var _errorStackParser2 = _interopRequireDefault(_errorStackParser);
-
-	var _objectAssign = __webpack_require__(165);
-
-	var _objectAssign2 = _interopRequireDefault(_objectAssign);
-
-	var _lib = __webpack_require__(166);
-
-	var __$Getters__ = [];
-	var __$Setters__ = [];
-	var __$Resetters__ = [];
-
-	function __GetDependency__(name) {
-	  return __$Getters__[name]();
-	}
-
-	function __Rewire__(name, value) {
-	  __$Setters__[name](value);
-	}
-
-	function __ResetDependency__(name) {
-	  __$Resetters__[name]();
-	}
-
-	var __RewireAPI__ = {
-	  '__GetDependency__': __GetDependency__,
-	  '__get__': __GetDependency__,
-	  '__Rewire__': __Rewire__,
-	  '__set__': __Rewire__,
-	  '__ResetDependency__': __ResetDependency__
-	};
-	var React = _react2['default'];
-	var Component = _react.Component;
-	var PropTypes = _react.PropTypes;
-
-	__$Getters__['React'] = function () {
-	  return React;
-	};
-
-	__$Setters__['React'] = function (value) {
-	  React = value;
-	};
-
-	__$Resetters__['React'] = function () {
-	  React = _react2['default'];
-	};
-
-	__$Getters__['Component'] = function () {
-	  return Component;
-	};
-
-	__$Setters__['Component'] = function (value) {
-	  Component = value;
-	};
-
-	__$Resetters__['Component'] = function () {
-	  Component = _react.Component;
-	};
-
-	__$Getters__['PropTypes'] = function () {
-	  return PropTypes;
-	};
-
-	__$Setters__['PropTypes'] = function (value) {
-	  PropTypes = value;
-	};
-
-	__$Resetters__['PropTypes'] = function () {
-	  PropTypes = _react.PropTypes;
-	};
-
-	var style = _styleJs2['default'];
-
-	__$Getters__['style'] = function () {
-	  return style;
-	};
-
-	__$Setters__['style'] = function (value) {
-	  style = value;
-	};
-
-	__$Resetters__['style'] = function () {
-	  style = _styleJs2['default'];
-	};
-
-	var ErrorStackParser = _errorStackParser2['default'];
-
-	__$Getters__['ErrorStackParser'] = function () {
-	  return ErrorStackParser;
-	};
-
-	__$Setters__['ErrorStackParser'] = function (value) {
-	  ErrorStackParser = value;
-	};
-
-	__$Resetters__['ErrorStackParser'] = function () {
-	  ErrorStackParser = _errorStackParser2['default'];
-	};
-
-	var assign = _objectAssign2['default'];
-
-	__$Getters__['assign'] = function () {
-	  return assign;
-	};
-
-	__$Setters__['assign'] = function (value) {
-	  assign = value;
-	};
-
-	__$Resetters__['assign'] = function () {
-	  assign = _objectAssign2['default'];
-	};
-
-	var isFilenameAbsolute = _lib.isFilenameAbsolute;
-	var makeUrl = _lib.makeUrl;
-	var makeLinkText = _lib.makeLinkText;
-
-	__$Getters__['isFilenameAbsolute'] = function () {
-	  return isFilenameAbsolute;
-	};
-
-	__$Setters__['isFilenameAbsolute'] = function (value) {
-	  isFilenameAbsolute = value;
-	};
-
-	__$Resetters__['isFilenameAbsolute'] = function () {
-	  isFilenameAbsolute = _lib.isFilenameAbsolute;
-	};
-
-	__$Getters__['makeUrl'] = function () {
-	  return makeUrl;
-	};
-
-	__$Setters__['makeUrl'] = function (value) {
-	  makeUrl = value;
-	};
-
-	__$Resetters__['makeUrl'] = function () {
-	  makeUrl = _lib.makeUrl;
-	};
-
-	__$Getters__['makeLinkText'] = function () {
-	  return makeLinkText;
-	};
-
-	__$Setters__['makeLinkText'] = function (value) {
-	  makeLinkText = value;
-	};
-
-	__$Resetters__['makeLinkText'] = function () {
-	  makeLinkText = _lib.makeLinkText;
-	};
-
-	var RedBox = (function (_Component) {
-	  _inherits(RedBox, _Component);
-
-	  function RedBox() {
-	    _classCallCheck(this, RedBox);
-
-	    _Component.apply(this, arguments);
-	  }
-
-	  RedBox.prototype.render = function render() {
-	    var _props = this.props;
-	    var error = _props.error;
-	    var filename = _props.filename;
-	    var editorScheme = _props.editorScheme;
-	    var useLines = _props.useLines;
-	    var useColumns = _props.useColumns;
-
-	    var _assign = assign({}, style, this.props.style);
-
-	    var redbox = _assign.redbox;
-	    var message = _assign.message;
-	    var stack = _assign.stack;
-	    var frame = _assign.frame;
-	    var file = _assign.file;
-	    var linkToFile = _assign.linkToFile;
-
-	    var frames = ErrorStackParser.parse(error).map(function (f, index) {
-	      var text = undefined;
-	      var url = undefined;
-
-	      if (index === 0 && filename && !isFilenameAbsolute(f.fileName)) {
-	        url = makeUrl(filename, editorScheme);
-	        text = makeLinkText(filename);
-	      } else {
-	        var lines = useLines ? f.lineNumber : null;
-	        var columns = useColumns ? f.columnNumber : null;
-	        url = makeUrl(f.fileName, editorScheme, lines, columns);
-	        text = makeLinkText(f.fileName, lines, columns);
-	      }
-
-	      return React.createElement(
-	        'div',
-	        { style: frame, key: index },
-	        React.createElement(
-	          'div',
-	          null,
-	          f.functionName
-	        ),
-	        React.createElement(
-	          'div',
-	          { style: file },
-	          React.createElement(
-	            'a',
-	            { href: url, style: linkToFile },
-	            text
-	          )
-	        )
-	      );
-	    });
-	    return React.createElement(
-	      'div',
-	      { style: redbox },
-	      React.createElement(
-	        'div',
-	        { style: message },
-	        error.name,
-	        ': ',
-	        error.message
-	      ),
-	      React.createElement(
-	        'div',
-	        { style: stack },
-	        frames
-	      )
-	    );
-	  };
-
-	  _createClass(RedBox, null, [{
-	    key: 'propTypes',
-	    value: {
-	      error: PropTypes.instanceOf(Error).isRequired,
-	      filename: PropTypes.string,
-	      editorScheme: PropTypes.string,
-	      useLines: PropTypes.bool,
-	      useColumns: PropTypes.bool
-	    },
-	    enumerable: true
-	  }, {
-	    key: 'displayName',
-	    value: 'RedBox',
-	    enumerable: true
-	  }, {
-	    key: 'defaultProps',
-	    value: {
-	      useLines: true,
-	      useColumns: true
-	    },
-	    enumerable: true
-	  }]);
-
-	  return RedBox;
-	})(Component);
-
-	var _defaultExport = RedBox;
-
-	if (typeof _defaultExport === 'object' || typeof _defaultExport === 'function') {
-	  Object.defineProperty(_defaultExport, '__Rewire__', {
-	    'value': __Rewire__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__set__', {
-	    'value': __Rewire__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__ResetDependency__', {
-	    'value': __ResetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__GetDependency__', {
-	    'value': __GetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__get__', {
-	    'value': __GetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__RewireAPI__', {
-	    'value': __RewireAPI__,
-	    'enumberable': false
-	  });
-	}
-
-	exports['default'] = _defaultExport;
-	exports.__GetDependency__ = __GetDependency__;
-	exports.__get__ = __GetDependency__;
-	exports.__Rewire__ = __Rewire__;
-	exports.__set__ = __Rewire__;
-	exports.__ResetDependency__ = __ResetDependency__;
-	exports.__RewireAPI__ = __RewireAPI__;
-	module.exports = exports['default'];
-
-/***/ },
-/* 162 */
-/***/ function(module, exports) {
-
-	'use strict';
-
-	exports.__esModule = true;
-	var __$Getters__ = [];
-	var __$Setters__ = [];
-	var __$Resetters__ = [];
-
-	function __GetDependency__(name) {
-	  return __$Getters__[name]();
-	}
-
-	function __Rewire__(name, value) {
-	  __$Setters__[name](value);
-	}
-
-	function __ResetDependency__(name) {
-	  __$Resetters__[name]();
-	}
-
-	var __RewireAPI__ = {
-	  '__GetDependency__': __GetDependency__,
-	  '__get__': __GetDependency__,
-	  '__Rewire__': __Rewire__,
-	  '__set__': __Rewire__,
-	  '__ResetDependency__': __ResetDependency__
-	};
-	var _defaultExport = {
-	  redbox: {
-	    boxSizing: 'border-box',
-	    fontFamily: 'sans-serif',
-	    position: 'fixed',
-	    padding: 10,
-	    top: 0,
-	    left: 0,
-	    bottom: 0,
-	    right: 0,
-	    width: '100%',
-	    background: 'rgb(204, 0, 0)',
-	    color: 'white',
-	    zIndex: 9999,
-	    textAlign: 'left',
-	    fontSize: '16px',
-	    lineHeight: 1.2
-	  },
-	  message: {
-	    fontWeight: 'bold'
-	  },
-	  stack: {
-	    fontFamily: 'monospace',
-	    marginTop: '2em'
-	  },
-	  frame: {
-	    marginTop: '1em'
-	  },
-	  file: {
-	    fontSize: '0.8em',
-	    color: 'rgba(255, 255, 255, 0.7)'
-	  },
-	  linkToFile: {
-	    textDecoration: 'none',
-	    color: 'rgba(255, 255, 255, 0.7)'
-	  }
-	};
-
-	if (typeof _defaultExport === 'object' || typeof _defaultExport === 'function') {
-	  Object.defineProperty(_defaultExport, '__Rewire__', {
-	    'value': __Rewire__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__set__', {
-	    'value': __Rewire__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__ResetDependency__', {
-	    'value': __ResetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__GetDependency__', {
-	    'value': __GetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__get__', {
-	    'value': __GetDependency__,
-	    'enumberable': false
-	  });
-	  Object.defineProperty(_defaultExport, '__RewireAPI__', {
-	    'value': __RewireAPI__,
-	    'enumberable': false
-	  });
-	}
-
-	exports['default'] = _defaultExport;
-	exports.__GetDependency__ = __GetDependency__;
-	exports.__get__ = __GetDependency__;
-	exports.__Rewire__ = __Rewire__;
-	exports.__set__ = __Rewire__;
-	exports.__ResetDependency__ = __ResetDependency__;
-	exports.__RewireAPI__ = __RewireAPI__;
-	module.exports = exports['default'];
-
-/***/ },
-/* 163 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, factory) {
-	    'use strict';
-	    // Universal Module Definition (UMD) to support AMD, CommonJS/Node.js, Rhino, and browsers.
-
-	    /* istanbul ignore next */
-	    if (true) {
-	        !(__WEBPACK_AMD_DEFINE_ARRAY__ = [__webpack_require__(164)], __WEBPACK_AMD_DEFINE_FACTORY__ = (factory), __WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ? (__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__), __WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
-	    } else if (typeof exports === 'object') {
-	        module.exports = factory(require('stackframe'));
-	    } else {
-	        root.ErrorStackParser = factory(root.StackFrame);
-	    }
-	}(this, function ErrorStackParser(StackFrame) {
-	    'use strict';
-
-	    var FIREFOX_SAFARI_STACK_REGEXP = /(^|@)\S+\:\d+/;
-	    var CHROME_IE_STACK_REGEXP = /^\s*at .*(\S+\:\d+|\(native\))/m;
-	    var SAFARI_NATIVE_CODE_REGEXP = /^(eval@)?(\[native code\])?$/;
-
-	    return {
-	        /**
-	         * Given an Error object, extract the most information from it.
-	         * @param error {Error}
-	         * @return Array[StackFrame]
-	         */
-	        parse: function ErrorStackParser$$parse(error) {
-	            if (typeof error.stacktrace !== 'undefined' || typeof error['opera#sourceloc'] !== 'undefined') {
-	                return this.parseOpera(error);
-	            } else if (error.stack && error.stack.match(CHROME_IE_STACK_REGEXP)) {
-	                return this.parseV8OrIE(error);
-	            } else if (error.stack) {
-	                return this.parseFFOrSafari(error);
-	            } else {
-	                throw new Error('Cannot parse given Error object');
-	            }
-	        },
-
-	        /**
-	         * Separate line and column numbers from a URL-like string.
-	         * @param urlLike String
-	         * @return Array[String]
-	         */
-	        extractLocation: function ErrorStackParser$$extractLocation(urlLike) {
-	            // Fail-fast but return locations like "(native)"
-	            if (urlLike.indexOf(':') === -1) {
-	                return [urlLike];
-	            }
-
-	            var locationParts = urlLike.replace(/[\(\)\s]/g, '').split(':');
-	            var lastNumber = locationParts.pop();
-	            var possibleNumber = locationParts[locationParts.length - 1];
-	            if (!isNaN(parseFloat(possibleNumber)) && isFinite(possibleNumber)) {
-	                var lineNumber = locationParts.pop();
-	                return [locationParts.join(':'), lineNumber, lastNumber];
-	            } else {
-	                return [locationParts.join(':'), lastNumber, undefined];
-	            }
-	        },
-
-	        parseV8OrIE: function ErrorStackParser$$parseV8OrIE(error) {
-	            return error.stack.split('\n').filter(function (line) {
-	                return !!line.match(CHROME_IE_STACK_REGEXP);
-	            }, this).map(function (line) {
-	                if (line.indexOf('(eval ') > -1) {
-	                    // Throw away eval information until we implement stacktrace.js/stackframe#8
-	                    line = line.replace(/eval code/g, 'eval').replace(/(\(eval at [^\()]*)|(\)\,.*$)/g, '');
-	                }
-	                var tokens = line.replace(/^\s+/, '').replace(/\(eval code/g, '(').split(/\s+/).slice(1);
-	                var locationParts = this.extractLocation(tokens.pop());
-	                var functionName = tokens.join(' ') || undefined;
-	                var fileName = locationParts[0] === 'eval' ? undefined : locationParts[0];
-
-	                return new StackFrame(functionName, undefined, fileName, locationParts[1], locationParts[2], line);
-	            }, this);
-	        },
-
-	        parseFFOrSafari: function ErrorStackParser$$parseFFOrSafari(error) {
-	            return error.stack.split('\n').filter(function (line) {
-	                return !line.match(SAFARI_NATIVE_CODE_REGEXP);
-	            }, this).map(function (line) {
-	                // Throw away eval information until we implement stacktrace.js/stackframe#8
-	                if (line.indexOf(' > eval') > -1) {
-	                    line = line.replace(/ line (\d+)(?: > eval line \d+)* > eval\:\d+\:\d+/g, ':$1');
-	                }
-
-	                if (line.indexOf('@') === -1 && line.indexOf(':') === -1) {
-	                    // Safari eval frames only have function names and nothing else
-	                    return new StackFrame(line);
-	                } else {
-	                    var tokens = line.split('@');
-	                    var locationParts = this.extractLocation(tokens.pop());
-	                    var functionName = tokens.shift() || undefined;
-	                    return new StackFrame(functionName, undefined, locationParts[0], locationParts[1], locationParts[2], line);
-	                }
-	            }, this);
-	        },
-
-	        parseOpera: function ErrorStackParser$$parseOpera(e) {
-	            if (!e.stacktrace || (e.message.indexOf('\n') > -1 &&
-	                e.message.split('\n').length > e.stacktrace.split('\n').length)) {
-	                return this.parseOpera9(e);
-	            } else if (!e.stack) {
-	                return this.parseOpera10(e);
-	            } else {
-	                return this.parseOpera11(e);
-	            }
-	        },
-
-	        parseOpera9: function ErrorStackParser$$parseOpera9(e) {
-	            var lineRE = /Line (\d+).*script (?:in )?(\S+)/i;
-	            var lines = e.message.split('\n');
-	            var result = [];
-
-	            for (var i = 2, len = lines.length; i < len; i += 2) {
-	                var match = lineRE.exec(lines[i]);
-	                if (match) {
-	                    result.push(new StackFrame(undefined, undefined, match[2], match[1], undefined, lines[i]));
-	                }
-	            }
-
-	            return result;
-	        },
-
-	        parseOpera10: function ErrorStackParser$$parseOpera10(e) {
-	            var lineRE = /Line (\d+).*script (?:in )?(\S+)(?:: In function (\S+))?$/i;
-	            var lines = e.stacktrace.split('\n');
-	            var result = [];
-
-	            for (var i = 0, len = lines.length; i < len; i += 2) {
-	                var match = lineRE.exec(lines[i]);
-	                if (match) {
-	                    result.push(new StackFrame(match[3] || undefined, undefined, match[2], match[1], undefined, lines[i]));
-	                }
-	            }
-
-	            return result;
-	        },
-
-	        // Opera 10.65+ Error.stack very similar to FF/Safari
-	        parseOpera11: function ErrorStackParser$$parseOpera11(error) {
-	            return error.stack.split('\n').filter(function (line) {
-	                return !!line.match(FIREFOX_SAFARI_STACK_REGEXP) &&
-	                    !line.match(/^Error created at/);
-	            }, this).map(function (line) {
-	                var tokens = line.split('@');
-	                var locationParts = this.extractLocation(tokens.pop());
-	                var functionCall = (tokens.shift() || '');
-	                var functionName = functionCall
-	                        .replace(/<anonymous function(: (\w+))?>/, '$2')
-	                        .replace(/\([^\)]*\)/g, '') || undefined;
-	                var argsRaw;
-	                if (functionCall.match(/\(([^\)]*)\)/)) {
-	                    argsRaw = functionCall.replace(/^[^\(]+\(([^\)]*)\)$/, '$1');
-	                }
-	                var args = (argsRaw === undefined || argsRaw === '[arguments not available]') ? undefined : argsRaw.split(',');
-	                return new StackFrame(functionName, args, locationParts[0], locationParts[1], locationParts[2], line);
-	            }, this);
-	        }
-	    };
-	}));
-
-
-
-/***/ },
-/* 164 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;(function (root, factory) {
-	    'use strict';
-	    // Universal Module Definition (UMD) to support AMD, CommonJS/Node.js, Rhino, and browsers.
-
-	    /* istanbul ignore next */
-	    if (true) {
-	        !(__WEBPACK_AMD_DEFINE_ARRAY__ = [], __WEBPACK_AMD_DEFINE_FACTORY__ = (factory), __WEBPACK_AMD_DEFINE_RESULT__ = (typeof __WEBPACK_AMD_DEFINE_FACTORY__ === 'function' ? (__WEBPACK_AMD_DEFINE_FACTORY__.apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__)) : __WEBPACK_AMD_DEFINE_FACTORY__), __WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
-	    } else if (typeof exports === 'object') {
-	        module.exports = factory();
-	    } else {
-	        root.StackFrame = factory();
-	    }
-	}(this, function () {
-	    'use strict';
-	    function _isNumber(n) {
-	        return !isNaN(parseFloat(n)) && isFinite(n);
-	    }
-
-	    function StackFrame(functionName, args, fileName, lineNumber, columnNumber, source) {
-	        if (functionName !== undefined) {
-	            this.setFunctionName(functionName);
-	        }
-	        if (args !== undefined) {
-	            this.setArgs(args);
-	        }
-	        if (fileName !== undefined) {
-	            this.setFileName(fileName);
-	        }
-	        if (lineNumber !== undefined) {
-	            this.setLineNumber(lineNumber);
-	        }
-	        if (columnNumber !== undefined) {
-	            this.setColumnNumber(columnNumber);
-	        }
-	        if (source !== undefined) {
-	            this.setSource(source);
-	        }
-	    }
-
-	    StackFrame.prototype = {
-	        getFunctionName: function () {
-	            return this.functionName;
-	        },
-	        setFunctionName: function (v) {
-	            this.functionName = String(v);
-	        },
-
-	        getArgs: function () {
-	            return this.args;
-	        },
-	        setArgs: function (v) {
-	            if (Object.prototype.toString.call(v) !== '[object Array]') {
-	                throw new TypeError('Args must be an Array');
-	            }
-	            this.args = v;
-	        },
-
-	        // NOTE: Property name may be misleading as it includes the path,
-	        // but it somewhat mirrors V8's JavaScriptStackTraceApi
-	        // https://code.google.com/p/v8/wiki/JavaScriptStackTraceApi and Gecko's
-	        // http://mxr.mozilla.org/mozilla-central/source/xpcom/base/nsIException.idl#14
-	        getFileName: function () {
-	            return this.fileName;
-	        },
-	        setFileName: function (v) {
-	            this.fileName = String(v);
-	        },
-
-	        getLineNumber: function () {
-	            return this.lineNumber;
-	        },
-	        setLineNumber: function (v) {
-	            if (!_isNumber(v)) {
-	                throw new TypeError('Line Number must be a Number');
-	            }
-	            this.lineNumber = Number(v);
-	        },
-
-	        getColumnNumber: function () {
-	            return this.columnNumber;
-	        },
-	        setColumnNumber: function (v) {
-	            if (!_isNumber(v)) {
-	                throw new TypeError('Column Number must be a Number');
-	            }
-	            this.columnNumber = Number(v);
-	        },
-
-	        getSource: function () {
-	            return this.source;
-	        },
-	        setSource: function (v) {
-	            this.source = String(v);
-	        },
-
-	        toString: function() {
-	            var functionName = this.getFunctionName() || '{anonymous}';
-	            var args = '(' + (this.getArgs() || []).join(',') + ')';
-	            var fileName = this.getFileName() ? ('@' + this.getFileName()) : '';
-	            var lineNumber = _isNumber(this.getLineNumber()) ? (':' + this.getLineNumber()) : '';
-	            var columnNumber = _isNumber(this.getColumnNumber()) ? (':' + this.getColumnNumber()) : '';
-	            return functionName + args + fileName + lineNumber + columnNumber;
-	        }
-	    };
-
-	    return StackFrame;
-	}));
-
-
-/***/ },
-/* 165 */
-/***/ function(module, exports) {
-
-	/* eslint-disable no-unused-vars */
-	'use strict';
-	var hasOwnProperty = Object.prototype.hasOwnProperty;
-	var propIsEnumerable = Object.prototype.propertyIsEnumerable;
-
-	function toObject(val) {
-		if (val === null || val === undefined) {
-			throw new TypeError('Object.assign cannot be called with null or undefined');
-		}
-
-		return Object(val);
-	}
-
-	module.exports = Object.assign || function (target, source) {
-		var from;
-		var to = toObject(target);
-		var symbols;
-
-		for (var s = 1; s < arguments.length; s++) {
-			from = Object(arguments[s]);
-
-			for (var key in from) {
-				if (hasOwnProperty.call(from, key)) {
-					to[key] = from[key];
-				}
-			}
-
-			if (Object.getOwnPropertySymbols) {
-				symbols = Object.getOwnPropertySymbols(from);
-				for (var i = 0; i < symbols.length; i++) {
-					if (propIsEnumerable.call(from, symbols[i])) {
-						to[symbols[i]] = from[symbols[i]];
-					}
-				}
-			}
-		}
-
-		return to;
-	};
-
-
-/***/ },
-/* 166 */
-/***/ function(module, exports) {
-
-	'use strict';
-
-	exports.__esModule = true;
-	var __$Getters__ = [];
-	var __$Setters__ = [];
-	var __$Resetters__ = [];
-
-	function __GetDependency__(name) {
-	  return __$Getters__[name]();
-	}
-
-	function __Rewire__(name, value) {
-	  __$Setters__[name](value);
-	}
-
-	function __ResetDependency__(name) {
-	  __$Resetters__[name]();
-	}
-
-	var __RewireAPI__ = {
-	  '__GetDependency__': __GetDependency__,
-	  '__get__': __GetDependency__,
-	  '__Rewire__': __Rewire__,
-	  '__set__': __Rewire__,
-	  '__ResetDependency__': __ResetDependency__
-	};
-	var filenameWithoutLoaders = function filenameWithoutLoaders(filename) {
-	  var index = filename.lastIndexOf('!');
-
-	  return index < 0 ? filename : filename.substr(index + 1);
-	};
-
-	var _filenameWithoutLoaders = filenameWithoutLoaders;
-
-	__$Getters__['filenameWithoutLoaders'] = function () {
-	  return filenameWithoutLoaders;
-	};
-
-	__$Setters__['filenameWithoutLoaders'] = function (value) {
-	  exports.filenameWithoutLoaders = filenameWithoutLoaders = value;
-	};
-
-	__$Resetters__['filenameWithoutLoaders'] = function () {
-	  exports.filenameWithoutLoaders = filenameWithoutLoaders = _filenameWithoutLoaders;
-	};
-
-	exports.filenameWithoutLoaders = _filenameWithoutLoaders;
-	var filenameHasLoaders = function filenameHasLoaders(filename) {
-	  var actualFilename = filenameWithoutLoaders(filename);
-
-	  return actualFilename !== filename;
-	};
-
-	var _filenameHasLoaders = filenameHasLoaders;
-
-	__$Getters__['filenameHasLoaders'] = function () {
-	  return filenameHasLoaders;
-	};
-
-	__$Setters__['filenameHasLoaders'] = function (value) {
-	  exports.filenameHasLoaders = filenameHasLoaders = value;
-	};
-
-	__$Resetters__['filenameHasLoaders'] = function () {
-	  exports.filenameHasLoaders = filenameHasLoaders = _filenameHasLoaders;
-	};
-
-	exports.filenameHasLoaders = _filenameHasLoaders;
-	var filenameHasSchema = function filenameHasSchema(filename) {
-	  return /^[\w]+\:/.test(filename);
-	};
-
-	var _filenameHasSchema = filenameHasSchema;
-
-	__$Getters__['filenameHasSchema'] = function () {
-	  return filenameHasSchema;
-	};
-
-	__$Setters__['filenameHasSchema'] = function (value) {
-	  exports.filenameHasSchema = filenameHasSchema = value;
-	};
-
-	__$Resetters__['filenameHasSchema'] = function () {
-	  exports.filenameHasSchema = filenameHasSchema = _filenameHasSchema;
-	};
-
-	exports.filenameHasSchema = _filenameHasSchema;
-	var isFilenameAbsolute = function isFilenameAbsolute(filename) {
-	  var actualFilename = filenameWithoutLoaders(filename);
-
-	  if (actualFilename.indexOf('/') === 0) {
-	    return true;
-	  }
-
-	  return false;
-	};
-
-	var _isFilenameAbsolute = isFilenameAbsolute;
-
-	__$Getters__['isFilenameAbsolute'] = function () {
-	  return isFilenameAbsolute;
-	};
-
-	__$Setters__['isFilenameAbsolute'] = function (value) {
-	  exports.isFilenameAbsolute = isFilenameAbsolute = value;
-	};
-
-	__$Resetters__['isFilenameAbsolute'] = function () {
-	  exports.isFilenameAbsolute = isFilenameAbsolute = _isFilenameAbsolute;
-	};
-
-	exports.isFilenameAbsolute = _isFilenameAbsolute;
-	var makeUrl = function makeUrl(filename, scheme, line, column) {
-	  var actualFilename = filenameWithoutLoaders(filename);
-
-	  if (filenameHasSchema(filename)) {
-	    return actualFilename;
-	  }
-
-	  var url = 'file://' + actualFilename;
-
-	  if (scheme) {
-	    url = scheme + '://open?url=' + url;
-
-	    if (line && actualFilename === filename) {
-	      url = url + '&line=' + line;
-
-	      if (column) {
-	        url = url + '&column=' + column;
-	      }
-	    }
-	  }
-
-	  return url;
-	};
-
-	var _makeUrl = makeUrl;
-
-	__$Getters__['makeUrl'] = function () {
-	  return makeUrl;
-	};
-
-	__$Setters__['makeUrl'] = function (value) {
-	  exports.makeUrl = makeUrl = value;
-	};
-
-	__$Resetters__['makeUrl'] = function () {
-	  exports.makeUrl = makeUrl = _makeUrl;
-	};
-
-	exports.makeUrl = _makeUrl;
-	var makeLinkText = function makeLinkText(filename, line, column) {
-	  var text = filenameWithoutLoaders(filename);
-
-	  if (line && text === filename) {
-	    text = text + ':' + line;
-
-	    if (column) {
-	      text = text + ':' + column;
-	    }
-	  }
-
-	  return text;
-	};
-	var _makeLinkText = makeLinkText;
-
-	__$Getters__['makeLinkText'] = function () {
-	  return makeLinkText;
-	};
-
-	__$Setters__['makeLinkText'] = function (value) {
-	  exports.makeLinkText = makeLinkText = value;
-	};
-
-	__$Resetters__['makeLinkText'] = function () {
-	  exports.makeLinkText = makeLinkText = _makeLinkText;
-	};
-
-	exports.makeLinkText = _makeLinkText;
-	exports.__GetDependency__ = __GetDependency__;
-	exports.__get__ = __GetDependency__;
-	exports.__Rewire__ = __Rewire__;
-	exports.__set__ = __Rewire__;
-	exports.__ResetDependency__ = __ResetDependency__;
-	exports.__RewireAPI__ = __RewireAPI__;
-	exports['default'] = __RewireAPI__;
-
-/***/ },
-/* 167 */
-/***/ function(module, exports) {
-
-	'use strict';
-
-	Object.defineProperty(exports, '__esModule', {
-	  value: true
-	});
-
-	var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }; })();
-
-	var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
-
-	exports['default'] = catchErrors;
-
-	function catchErrors(_ref) {
-	  var filename = _ref.filename;
-	  var components = _ref.components;
-	  var imports = _ref.imports;
-
-	  var _imports = _slicedToArray(imports, 3);
-
-	  var React = _imports[0];
-	  var ErrorReporter = _imports[1];
-	  var reporterOptions = _imports[2];
-
-	  if (!React || !React.Component) {
-	    throw new Error('imports[0] for react-transform-catch-errors does not look like React.');
-	  }
-	  if (typeof ErrorReporter !== 'function') {
-	    throw new Error('imports[1] for react-transform-catch-errors does not look like a React component.');
-	  }
-
-	  return function wrapToCatchErrors(ReactClass, componentId) {
-	    var originalRender = ReactClass.prototype.render;
-
-	    ReactClass.prototype.render = function tryRender() {
-	      try {
-	        return originalRender.apply(this, arguments);
-	      } catch (err) {
-	        if (console.reportErrorsAsExceptions) {
-	          // Stop react-native from triggering its own error handler
-	          console.reportErrorsAsExceptions = false;
-	          console.error(err);
-	          // Reactivate it so other errors are still handled
-	          console.reportErrorsAsExceptions = true;
-	        } else {
-	          console.error(err);
-	        }
-
-	        return React.createElement(ErrorReporter, _extends({
-	          error: err,
-	          filename: filename
-	        }, reporterOptions));
-	      }
-	    };
-
-	    return ReactClass;
-	  };
-	}
-
-	module.exports = exports['default'];
-
-/***/ },
-/* 168 */
-/***/ function(module, exports, __webpack_require__) {
-
 	// style-loader: Adds some css to the DOM by adding a <style> tag
 
 	// load the styles
-	var content = __webpack_require__(169);
+	var content = __webpack_require__(162);
 	if(typeof content === 'string') content = [[module.id, content, '']];
 	// add the styles to the DOM
-	var update = __webpack_require__(171)(content, {});
+	var update = __webpack_require__(164)(content, {});
 	if(content.locals) module.exports = content.locals;
 	// Hot Module Replacement
-	if(false) {
+	if(true) {
 		// When the styles change, update the <style> tags
 		if(!content.locals) {
-			module.hot.accept("!!./../../node_modules/css-loader/index.js!./../../node_modules/sass-loader/index.js!./base.scss", function() {
-				var newContent = require("!!./../../node_modules/css-loader/index.js!./../../node_modules/sass-loader/index.js!./base.scss");
+			module.hot.accept(162, function() {
+				var newContent = __webpack_require__(162);
 				if(typeof newContent === 'string') newContent = [[module.id, newContent, '']];
 				update(newContent);
 			});
@@ -20753,10 +20227,10 @@
 	}
 
 /***/ },
-/* 169 */
+/* 162 */
 /***/ function(module, exports, __webpack_require__) {
 
-	exports = module.exports = __webpack_require__(170)();
+	exports = module.exports = __webpack_require__(163)();
 	// imports
 
 
@@ -20767,7 +20241,7 @@
 
 
 /***/ },
-/* 170 */
+/* 163 */
 /***/ function(module, exports) {
 
 	/*
@@ -20823,7 +20297,7 @@
 
 
 /***/ },
-/* 171 */
+/* 164 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*
@@ -21077,45 +20551,15 @@
 
 
 /***/ },
-/* 172 */
+/* 165 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 
-	var _redboxReact2 = __webpack_require__(161);
-
-	var _redboxReact3 = _interopRequireDefault(_redboxReact2);
-
-	var _react2 = __webpack_require__(2);
-
-	var _react3 = _interopRequireDefault(_react2);
-
-	var _reactTransformCatchErrors3 = __webpack_require__(167);
-
-	var _reactTransformCatchErrors4 = _interopRequireDefault(_reactTransformCatchErrors3);
-
-	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-	var _components = {
-	    _component: {}
-	};
-
-	var _reactTransformCatchErrors2 = (0, _reactTransformCatchErrors4.default)({
-	    filename: '/Users/coupang/Desktop/testearly/webpack-react-14-study/app/js/CommentForm.js',
-	    components: _components,
-	    locals: [],
-	    imports: [_react3.default, _redboxReact3.default]
-	});
-
-	function _wrapComponent(id) {
-	    return function (Component) {
-	        return _reactTransformCatchErrors2(Component, id);
-	    };
-	}
-
 	var React = __webpack_require__(2);
 
-	var CommentForm = _wrapComponent('_component')(React.createClass({
+	var CommentForm = React.createClass({
+	    displayName: 'CommentForm',
 	    handleSubmit: function handleSubmit(e) {
 	        e.preventDefault();
 	        var author = this.refs.author.value.trim();
@@ -21124,7 +20568,7 @@
 	            return;
 	        }
 
-	        this.props.onCommentSubmit({ author: author, text: text });
+	        this.props.onCommentSubmit({ author: author, text: text, brown: brown });
 	        this.refs.author.value = '';
 	        this.refs.text.value = '';
 	        return;
@@ -21138,52 +20582,21 @@
 	            React.createElement('input', { type: 'submit' })
 	        );
 	    }
-	}));
+	});
 
 	module.exports = CommentForm;
 
 /***/ },
-/* 173 */
+/* 166 */
 /***/ function(module, exports, __webpack_require__) {
 
 	'use strict';
 
-	var _redboxReact2 = __webpack_require__(161);
-
-	var _redboxReact3 = _interopRequireDefault(_redboxReact2);
-
-	var _react2 = __webpack_require__(2);
-
-	var _react3 = _interopRequireDefault(_react2);
-
-	var _reactTransformCatchErrors3 = __webpack_require__(167);
-
-	var _reactTransformCatchErrors4 = _interopRequireDefault(_reactTransformCatchErrors3);
-
-	function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-	var _components = {
-	    _component: {},
-	    _component2: {}
-	};
-
-	var _reactTransformCatchErrors2 = (0, _reactTransformCatchErrors4.default)({
-	    filename: '/Users/coupang/Desktop/testearly/webpack-react-14-study/app/js/CommentWrapper.js',
-	    components: _components,
-	    locals: [],
-	    imports: [_react3.default, _redboxReact3.default]
-	});
-
-	function _wrapComponent(id) {
-	    return function (Component) {
-	        return _reactTransformCatchErrors2(Component, id);
-	    };
-	}
-
 	var React = __webpack_require__(2);
-	var marked = __webpack_require__(174);
+	var marked = __webpack_require__(167);
 
-	var CommentList = _wrapComponent('_component')(React.createClass({
+	var CommentList = React.createClass({
+	    displayName: 'CommentList',
 	    render: function render() {
 	        var commentNodes = this.props.data.map(function (comment, i) {
 	            return React.createElement(
@@ -21198,9 +20611,10 @@
 	            commentNodes
 	        );
 	    }
-	}));
+	});
 
-	var Comment = _wrapComponent('_component2')(React.createClass({
+	var Comment = React.createClass({
+	    displayName: 'Comment',
 	    rawMarkup: function rawMarkup() {
 	        var rawMarkup = marked(this.props.children.toString(), { sanitize: true });
 	        return { __html: rawMarkup };
@@ -21211,18 +20625,18 @@
 	            { className: 'comment' },
 	            React.createElement(
 	                'h2',
-	                { className: 'commentAuthor' },
+	                { className: 'commentAuthor', style: { color: this.props.color } },
 	                this.props.author
 	            ),
 	            React.createElement('span', { dangerouslySetInnerHTML: this.rawMarkup() })
 	        );
 	    }
-	}));
+	});
 
 	module.exports = { CommentList: CommentList, Comment: Comment };
 
 /***/ },
-/* 174 */
+/* 167 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/* WEBPACK VAR INJECTION */(function(global) {/**
@@ -22512,6 +21926,348 @@
 	}());
 
 	/* WEBPACK VAR INJECTION */}.call(exports, (function() { return this; }())))
+
+/***/ },
+/* 168 */
+/***/ function(module, exports) {
+
+	'use strict';
+
+	Object.defineProperty(exports, "__esModule", {
+	  value: true
+	});
+	var NICE = exports.NICE = 'pink';
+	var SUPER_NICE = exports.SUPER_NICE = 'darkred';
+
+/***/ },
+/* 169 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/* WEBPACK VAR INJECTION */(function(module) {/*eslint-env browser*/
+	/*global __resourceQuery*/
+
+	var options = {
+	  path: "/__webpack_hmr",
+	  timeout: 20 * 1000,
+	  overlay: true,
+	  reload: false,
+	  log: true,
+	  warn: true
+	};
+	if (false) {
+	  var querystring = require('querystring');
+	  var overrides = querystring.parse(__resourceQuery.slice(1));
+	  if (overrides.path) options.path = overrides.path;
+	  if (overrides.timeout) options.timeout = overrides.timeout;
+	  if (overrides.overlay) options.overlay = overrides.overlay !== 'false';
+	  if (overrides.reload) options.reload = overrides.reload !== 'false';
+	  if (overrides.noInfo && overrides.noInfo !== 'false') {
+	    options.log = false;
+	  }
+	  if (overrides.quiet && overrides.quiet !== 'false') {
+	    options.log = false;
+	    options.warn = false;
+	  }
+	}
+
+	if (typeof window.EventSource === 'undefined') {
+	  console.warn(
+	    "webpack-hot-middleware's client requires EventSource to work. " +
+	    "You should include a polyfill if you want to support this browser: " +
+	    "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events#Tools"
+	  );
+	} else {
+	  connect();
+	}
+
+	function connect() {
+	  var source = new window.EventSource(options.path);
+	  var lastActivity = new Date();
+
+	  source.onopen = handleOnline;
+	  source.onmessage = handleMessage;
+	  source.onerror = handleDisconnect;
+
+	  var timer = setInterval(function() {
+	    if ((new Date() - lastActivity) > options.timeout) {
+	      handleDisconnect();
+	    }
+	  }, options.timeout / 2);
+
+	  function handleOnline() {
+	    if (options.log) console.log("[HMR] connected");
+	    lastActivity = new Date();
+	  }
+
+	  function handleMessage(event) {
+	    lastActivity = new Date();
+	    if (event.data == "\uD83D\uDC93") {
+	      return;
+	    }
+	    try {
+	      processMessage(JSON.parse(event.data));
+	    } catch (ex) {
+	      if (options.warn) {
+	        console.warn("Invalid HMR message: " + event.data + "\n" + ex);
+	      }
+	    }
+	  }
+
+	  function handleDisconnect() {
+	    clearInterval(timer);
+	    source.close();
+	    setTimeout(connect, options.timeout);
+	  }
+
+	}
+
+	var strip = __webpack_require__(171);
+
+	var overlay;
+	if (options.overlay) {
+	  overlay = __webpack_require__(173);
+	}
+
+	function problems(type, obj) {
+	  if (options.warn) console.warn("[HMR] bundle has " + type + ":");
+	  var list = [];
+	  obj[type].forEach(function(msg) {
+	    var clean = strip(msg);
+	    if (options.warn) console.warn("[HMR] " + clean);
+	    list.push(clean);
+	  });
+	  if (overlay && type !== 'warnings') overlay.showProblems(list);
+	}
+
+	function success() {
+	  if (overlay) overlay.clear();
+	}
+
+	var processUpdate = __webpack_require__(174);
+
+	var customHandler;
+	function processMessage(obj) {
+	  if (obj.action == "building") {
+	    if (options.log) console.log("[HMR] bundle rebuilding");
+	  } else if (obj.action == "built") {
+	    if (options.log) console.log("[HMR] bundle rebuilt in " + obj.time + "ms");
+	    if (obj.errors.length > 0) {
+	      problems('errors', obj);
+	    } else {
+	      if (obj.warnings.length > 0) problems('warnings', obj);
+	      success();
+
+	      processUpdate(obj.hash, obj.modules, options);
+	    }
+	  } else if (customHandler) {
+	    customHandler(obj);
+	  }
+	}
+
+	if (module) {
+	  module.exports = {
+	    subscribe: function subscribe(handler) {
+	      customHandler = handler;
+	    }
+	  };
+	}
+
+	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(170)(module)))
+
+/***/ },
+/* 170 */
+/***/ function(module, exports) {
+
+	module.exports = function(module) {
+		if(!module.webpackPolyfill) {
+			module.deprecate = function() {};
+			module.paths = [];
+			// module.parent = undefined by default
+			module.children = [];
+			module.webpackPolyfill = 1;
+		}
+		return module;
+	}
+
+
+/***/ },
+/* 171 */
+/***/ function(module, exports, __webpack_require__) {
+
+	'use strict';
+	var ansiRegex = __webpack_require__(172)();
+
+	module.exports = function (str) {
+		return typeof str === 'string' ? str.replace(ansiRegex, '') : str;
+	};
+
+
+/***/ },
+/* 172 */
+/***/ function(module, exports) {
+
+	'use strict';
+	module.exports = function () {
+		return /(?:(?:\u001b\[)|\u009b)(?:(?:[0-9]{1,3})?(?:(?:;[0-9]{0,3})*)?[A-M|f-m])|\u001b[A-M]/g;
+	};
+
+
+/***/ },
+/* 173 */
+/***/ function(module, exports) {
+
+	/*eslint-env browser*/
+
+	var clientOverlay = document.createElement('div');
+	clientOverlay.style.display = 'none';
+	clientOverlay.style.background = '#fdd';
+	clientOverlay.style.color = '#000';
+	clientOverlay.style.whiteSpace = 'pre';
+	clientOverlay.style.fontFamily = 'monospace';
+	clientOverlay.style.position = 'fixed';
+	clientOverlay.style.zIndex = 9999;
+	clientOverlay.style.padding = '10px';
+	clientOverlay.style.left = 0;
+	clientOverlay.style.right = 0;
+	clientOverlay.style.top = 0;
+	clientOverlay.style.bottom = 0;
+	clientOverlay.style.overflow = 'auto';
+
+	if (document.body) {
+	  document.body.appendChild(clientOverlay);
+	}
+
+	exports.showProblems =
+	function showProblems(lines) {
+	  clientOverlay.innerHTML = '';
+	  clientOverlay.style.display = 'block';
+	  lines.forEach(function(msg) {
+	    var div = document.createElement('div');
+	    div.textContent = msg;
+	    clientOverlay.appendChild(div);
+	  });
+	};
+
+	exports.clear =
+	function clear() {
+	  clientOverlay.innerHTML = '';
+	  clientOverlay.style.display = 'none';
+	};
+
+
+
+/***/ },
+/* 174 */
+/***/ function(module, exports, __webpack_require__) {
+
+	/**
+	 * Based heavily on https://github.com/webpack/webpack/blob/
+	 *  c0afdf9c6abc1dd70707c594e473802a566f7b6e/hot/only-dev-server.js
+	 * Original copyright Tobias Koppers @sokra (MIT license)
+	 */
+
+	/* global window __webpack_hash__ */
+
+	if (false) {
+	  throw new Error("[HMR] Hot Module Replacement is disabled.");
+	}
+
+	var lastHash;
+	var failureStatuses = { abort: 1, fail: 1 };
+	var applyOptions = { ignoreUnaccepted: true };
+
+	function upToDate(hash) {
+	  if (hash) lastHash = hash;
+	  return lastHash == __webpack_require__.h();
+	}
+
+	module.exports = function(hash, moduleMap, options) {
+	  var reload = options.reload;
+	  if (!upToDate(hash) && module.hot.status() == "idle") {
+	    if (options.log) console.log("[HMR] Checking for updates on the server...");
+	    check();
+	  }
+
+	  function check() {
+	    module.hot.check(function(err, updatedModules) {
+	      if (err) return handleError(err);
+
+	      if(!updatedModules) {
+	        if (options.warn) {
+	          console.warn("[HMR] Cannot find update (Full reload needed)");
+	          console.warn("[HMR] (Probably because of restarting the server)");
+	        }
+	        performReload();
+	        return null;
+	      }
+
+	      module.hot.apply(applyOptions, function(applyErr, renewedModules) {
+	        if (applyErr) return handleError(applyErr);
+
+	        if (!upToDate()) check();
+
+	        logUpdates(updatedModules, renewedModules);
+	      });
+	    });
+	  }
+
+	  function logUpdates(updatedModules, renewedModules) {
+	    var unacceptedModules = updatedModules.filter(function(moduleId) {
+	      return renewedModules && renewedModules.indexOf(moduleId) < 0;
+	    });
+
+	    if(unacceptedModules.length > 0) {
+	      if (options.warn) {
+	        console.warn(
+	          "[HMR] The following modules couldn't be hot updated: " +
+	          "(Full reload needed)"
+	        );
+	        unacceptedModules.forEach(function(moduleId) {
+	          console.warn("[HMR]  - " + moduleMap[moduleId]);
+	        });
+	      }
+	      performReload();
+	      return;
+	    }
+
+	    if (options.log) {
+	      if(!renewedModules || renewedModules.length === 0) {
+	        console.log("[HMR] Nothing hot updated.");
+	      } else {
+	        console.log("[HMR] Updated modules:");
+	        renewedModules.forEach(function(moduleId) {
+	          console.log("[HMR]  - " + moduleMap[moduleId]);
+	        });
+	      }
+
+	      if (upToDate()) {
+	        console.log("[HMR] App is up to date.");
+	      }
+	    }
+	  }
+
+	  function handleError(err) {
+	    if (module.hot.status() in failureStatuses) {
+	      if (options.warn) {
+	        console.warn("[HMR] Cannot check for update (Full reload needed)");
+	        console.warn("[HMR] " + err.stack || err.message);
+	      }
+	      performReload();
+	      return;
+	    }
+	    if (options.warn) {
+	      console.warn("[HMR] Update check failed: " + err.stack || err.message);
+	    }
+	  }
+
+	  function performReload() {
+	    if (reload) {
+	      if (options.warn) console.warn("[HMR] Reloading page");
+	      window.location.reload();
+	    }
+	  }
+	};
+
 
 /***/ }
 /******/ ]);

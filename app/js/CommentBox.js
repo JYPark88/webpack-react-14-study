@@ -1,4 +1,4 @@
-require('../css/base.scss');
+require('../css/scss/base.scss');
 
 var React = require('react');
 var CommentForm = require('./CommentForm');

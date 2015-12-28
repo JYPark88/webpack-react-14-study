@@ -5,7 +5,7 @@ var CommentList = React.createClass({
     render() {
         var commentNodes = this.props.data.map(function (comment, i) {
             return (
-                <Comment key={i} author={comment.author}>
+                <Comment key={i} author={comment.author} color={comment.color}>
                     {comment.text}
                 </Comment>
             );
@@ -27,7 +27,7 @@ var Comment = React.createClass({
     render() {
         return (
             <div className="comment">
-                <h2 className="commentAuthor">
+                <h2 className="commentAuthor" style={{color:this.props.color}}>
                     {this.props.author}
                 </h2>
                 <span dangerouslySetInnerHTML={this.rawMarkup()}/>

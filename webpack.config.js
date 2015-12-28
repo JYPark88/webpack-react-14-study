@@ -1,18 +1,17 @@
 var path = require('path');
 var webpack = require('webpack');
-var Clean = require('clean-webpack-plugin');
 
 module.exports = {
     entry: {
-        tutorial: ['./app/js/main']
+        tutorial: ['./app/js/main', 'webpack-hot-middleware/client']
     },
     output: {
-        path: path.join(__dirname, './dist'),
-        filename: '[name].bundle.js'
+        path: path.join(__dirname, './app/dist'),
+        filename: '[name].bundle.js',
+        publicPath: '/static/'
     },
     plugins: [
-        new Clean(['dist']),
-        // new webpack.HotModuleReplacementPlugin(),
+        new webpack.HotModuleReplacementPlugin(),
         new webpack.NoErrorsPlugin()
     ],
     module: {
@@ -31,9 +30,6 @@ module.exports = {
             test: /\.scss$/,
             loaders: ['style', 'css', 'sass']
         }]
-    },
-    sassLoader: {
-        includePaths: [path.resolve(__dirname, "./app/css")]
     },
     resolve: {
         extensions: ['', '.js']
